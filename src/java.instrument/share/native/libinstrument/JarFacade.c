@@ -99,6 +99,7 @@ readAttributes(const char* jarfile)
     int rc;
     iterationContext context = { NULL, NULL };
 
+    //读取的是MANIFEST.MF文件中的属性和值
     rc = JLI_ManifestIterate(jarfile, doAttribute, (void*)&context);
 
     if (rc == 0) {

@@ -200,6 +200,7 @@ getJPLISEnvironment(jvmtiEnv * jvmtienv) {
  *  Returns error if the agent cannot be created and initialized.
  *  The JPLISAgent* pointed to by agent_ptr is set to the new broker,
  *  or NULL if an error has occurred.
+ 创建并初始化
  */
 JPLISInitializationError
 createNewJPLISAgent(JavaVM * vm, JPLISAgent **agent_ptr) {
@@ -208,16 +209,19 @@ createNewJPLISAgent(JavaVM * vm, JPLISAgent **agent_ptr) {
     jint                     jnierror        = JNI_OK;
 
     *agent_ptr = NULL;
+    //获取jvm的环境变量
     jnierror = (*vm)->GetEnv(  vm,
                                (void **) &jvmtienv,
                                JVMTI_VERSION_1_1);
     if ( jnierror != JNI_OK ) {
         initerror = JPLIS_INIT_ERROR_CANNOT_CREATE_NATIVE_AGENT;
     } else {
+    //1创建JPLISAgent
         JPLISAgent * agent = allocateJPLISAgent(jvmtienv);
         if ( agent == NULL ) {
             initerror = JPLIS_INIT_ERROR_ALLOCATION_FAILURE;
         } else {
+        //2.初始化JPLISAgent
             initerror = initializeJPLISAgent(  agent,
                                                vm,
                                                jvmtienv);
@@ -241,6 +245,7 @@ createNewJPLISAgent(JavaVM * vm, JPLISAgent **agent_ptr) {
 
 /*
  *  Allocates a JPLISAgent. Returns NULL if it cannot be allocated
+ 创建JPLISAgent对象
  */
 JPLISAgent *
 allocateJPLISAgent(jvmtiEnv * jvmtienv) {
@@ -248,6 +253,9 @@ allocateJPLISAgent(jvmtiEnv * jvmtienv) {
                                     sizeof(JPLISAgent));
 }
 
+/**
+初始化
+**/
 JPLISInitializationError
 initializeJPLISAgent(   JPLISAgent *    agent,
                         JavaVM *        vm,
@@ -303,8 +311,11 @@ initializeJPLISAgent(   JPLISAgent *    agent,
     if ( jvmtierror == JVMTI_ERROR_NONE ) {
         jvmtiEventCallbacks callbacks;
         memset(&callbacks, 0, sizeof(callbacks));
+
+        //绑定初始化回调方法eventHandlerVMInit,这个eventHandlerVMInit回调方法在InvocationAdapter.c中
         callbacks.VMInit = &eventHandlerVMInit;
 
+        //监听VMInit初始化时间,VM初始化完成后就会回调eventHandlerVMInit方法
         jvmtierror = (*jvmtienv)->SetEventCallbacks( jvmtienv,
                                                      &callbacks,
                                                      sizeof(callbacks));
@@ -313,6 +324,7 @@ initializeJPLISAgent(   JPLISAgent *    agent,
     }
 
     if ( jvmtierror == JVMTI_ERROR_NONE ) {
+    //设置初始化事件通知
         jvmtierror = (*jvmtienv)->SetEventNotificationMode(
                                                 jvmtienv,
                                                 JVMTI_ENABLE,
@@ -378,6 +390,8 @@ recordCommandLineData(  JPLISAgent *    agent,
  * If this call fails, the JVM launch will ultimately be aborted,
  * so we don't have to be super-careful to clean up in partial failure
  * cases.
+ 如果这个方法调用失败，那么jvm的启动会立即停止
+
  */
 jboolean
 processJavaStart(   JPLISAgent *    agent,
@@ -398,6 +412,7 @@ processJavaStart(   JPLISAgent *    agent,
      *  Now make the InstrumentationImpl instance.
      */
     if ( result ) {
+        //创建java类中的InstrumentationImpl对象
         result = createInstrumentationImpl(jnienv, agent);
         jplis_assert(result);
     }
@@ -408,6 +423,7 @@ processJavaStart(   JPLISAgent *    agent,
      *  Turn off the VMInit handler.
      */
     if ( result ) {
+        //监听ClassFileLoadHook事件
         result = setLivePhaseEventHandlers(agent);
         jplis_assert(result);
     }
@@ -416,6 +432,7 @@ processJavaStart(   JPLISAgent *    agent,
      *  Load the Java agent, and call the premain.
      */
     if ( result ) {
+        //调用InstrumentationImpl中的loadClassAndCallPremain方法
         result = startJavaAgent(agent, jnienv,
                                 agent->mAgentClassName, agent->mOptionsString,
                                 agent->mPremainCaller);
@@ -432,6 +449,9 @@ processJavaStart(   JPLISAgent *    agent,
     return result;
 }
 
+/**
+* 启动代理
+*/
 jboolean
 startJavaAgent( JPLISAgent *    agent,
                 JNIEnv *        jnienv,
@@ -449,6 +469,7 @@ startJavaAgent( JPLISAgent *    agent,
                                                &optionsStringObject);
 
     if (success) {
+        //调用代理方法
         success = invokeJavaAgentMainMethod(   jnienv,
                                                agent->mInstrumentationImpl,
                                                agentMainMethod,
@@ -472,6 +493,7 @@ deallocateCommandLineData( JPLISAgent * agent) {
 /*
  * Create the java.lang.instrument.Instrumentation instance
  * and access information for it (method IDs, etc)
+ 创建java.lang.instrument.Instrumentation的实例,并访问它的信息,如方法的id
  */
 jboolean
 createInstrumentationImpl( JNIEnv *        jnienv,
@@ -486,13 +508,30 @@ createInstrumentationImpl( JNIEnv *        jnienv,
     jobject     localReference          = NULL;
 
     /* First find the class of our implementation */
+    //#define JPLIS_INSTRUMENTIMPL_CLASSNAME  "sun/instrument/InstrumentationImpl"
+    //这个常量的定义在JPLISAgent.h文件中,通过这个地址找到InstrumentationImpl类
     implClass = (*jnienv)->FindClass(   jnienv,
                                         JPLIS_INSTRUMENTIMPL_CLASSNAME);
     errorOutstanding = checkForAndClearThrowable(jnienv);
     errorOutstanding = errorOutstanding || (implClass == NULL);
     jplis_assert_msg(!errorOutstanding, "find class on InstrumentationImpl failed");
 
+    /**
+    下面是对InstrumentationImpl类中的方法进行解析，并获取方法的引用
+    #define JPLIS_INSTRUMENTIMPL_CLASSNAME                      "sun/instrument/InstrumentationImpl"
+    #define JPLIS_INSTRUMENTIMPL_CONSTRUCTOR_METHODNAME         "<init>"
+    #define JPLIS_INSTRUMENTIMPL_CONSTRUCTOR_METHODSIGNATURE    "(JZZ)V"
+    #define JPLIS_INSTRUMENTIMPL_PREMAININVOKER_METHODNAME      "loadClassAndCallPremain"
+    #define JPLIS_INSTRUMENTIMPL_PREMAININVOKER_METHODSIGNATURE "(Ljava/lang/String;Ljava/lang/String;)V"
+    #define JPLIS_INSTRUMENTIMPL_AGENTMAININVOKER_METHODNAME      "loadClassAndCallAgentmain"
+    #define JPLIS_INSTRUMENTIMPL_AGENTMAININVOKER_METHODSIGNATURE "(Ljava/lang/String;Ljava/lang/String;)V"
+    #define JPLIS_INSTRUMENTIMPL_TRANSFORM_METHODNAME           "transform"
+    #define JPLIS_INSTRUMENTIMPL_TRANSFORM_METHODSIGNATURE      \
+        "(Ljava/lang/Module;Ljava/lang/ClassLoader;Ljava/lang/String;Ljava/lang/Class;Ljava/security/ProtectionDomain;[BZ)[B"
+    **/
+
     if ( !errorOutstanding ) {
+        //获取方法的id
         constructorID = (*jnienv)->GetMethodID( jnienv,
                                                 implClass,
                                                 JPLIS_INSTRUMENTIMPL_CONSTRUCTOR_METHODNAME,
@@ -504,6 +543,7 @@ createInstrumentationImpl( JNIEnv *        jnienv,
 
     if ( !errorOutstanding ) {
         jlong   peerReferenceAsScalar = (jlong)(intptr_t) agent;
+        //保存本地引用
         localReference = (*jnienv)->NewObject(  jnienv,
                                                 implClass,
                                                 constructorID,
@@ -619,6 +659,9 @@ invokeJavaAgentMainMethod( JNIEnv *    jnienv,
     return !errorOutstanding;
 }
 
+/**
+* 绑定ClassFileLoadHook 事件
+*/
 jboolean
 setLivePhaseEventHandlers(  JPLISAgent * agent) {
     jvmtiEventCallbacks callbacks;
@@ -629,8 +672,11 @@ setLivePhaseEventHandlers(  JPLISAgent * agent) {
      * to the ClassFileLoadHook handler, which is what the agents need from now on)
      */
     memset(&callbacks, 0, sizeof(callbacks));
+
+    //在这里绑定回调方法
     callbacks.ClassFileLoadHook = &eventHandlerClassFileLoadHook;
 
+    //设置监听ClassFileLoad的监听事件
     jvmtierror = (*jvmtienv)->SetEventCallbacks( jvmtienv,
                                                  &callbacks,
                                                  sizeof(callbacks));

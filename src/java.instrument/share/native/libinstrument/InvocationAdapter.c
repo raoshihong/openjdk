@@ -44,9 +44,15 @@
 
 /**
  * This module contains the direct interface points with the JVMTI.
+    该模块包含与JVMTI的直接接口点。
  * The OnLoad handler is here, along with the various event handlers.
+    这里有OnLoad处理程序以及各种事件处理程序。
  */
 
+//定义方法
+/**
+添加类路径方法
+**/
 static int
 appendClassPath(JPLISAgent* agent,
                 const char* jarfile);
@@ -61,20 +67,29 @@ appendBootClassPath(JPLISAgent* agent,
  * Parse -javaagent tail, of the form name[=options], into name
  * and options. Returned values are heap allocated and options maybe
  * NULL. Returns 0 if parse succeeds, -1 if allocation fails.
+ 解析 以-javaagent结尾的参数,并返回堆中分配的值，如果解析成功返回0，解析失败返回-1
  */
 static int
 parseArgumentTail(char* tail, char** name, char** options) {
     int len;
     char* pos;
 
+    //D:\develop-soft\Java\jdk1.8.0_171\bin\java.exe -agentlib:jdwp=transport=dt_socket,address=127.0.0.1:54689,suspend=y,server=n
+    //-javaagent:C:\Users\honey.rao\.IntelliJIdea2018.2\system\captureAgent\debugger-agent.jar=file:/C:/Users/honey.rao/AppData/Local/Temp/capture1.props
+    //查找 -javagent:结尾的字符串中的=的位置
     pos = strchr(tail, '=');
+    //如果没有key=value的参数,那么直接返回整个长度
     len = (pos == NULL) ? (int)strlen(tail) : (int)(pos - tail);
 
+    //创建字符串name
     *name = (char*)malloc(len+1);
     if (*name == NULL) {
         return -1;
     }
+
+    //查找到,将tail中len长度的字符串
     memcpy(*name, tail, len);
+    //设置数组
     (*name)[len] = '\0';
 
     if (pos == NULL) {
@@ -130,7 +145,9 @@ convertCapabilityAttributes(const jarAttribute* attributes, JPLISAgent* agent) {
 
 /*
  *  This will be called once for every -javaagent on the command line.
+    一旦命令行中有-javaagent这个参数，那么这个方法将会被调用
  *  Each call to Agent_OnLoad will create its own agent and agent data.
+    每次调用Agent_OnLoad方法将会创建一个自己的代理和代理数据
  *
  *  The argument tail string provided to Agent_OnLoad will be of form
  *  <jarfile>[=<options>]. The tail string is split into the jarfile and
@@ -139,13 +156,17 @@ convertCapabilityAttributes(const jarAttribute* attributes, JPLISAgent* agent) {
  *  file is then added to the system class path, and if the Boot-Class-Path
  *  attribute is present then all relative URLs in the value are processed
  *  to create boot class path segments to append to the boot class path.
+ -javaagent:C:\Users\honey.rao\.IntelliJIdea2018.2\system\captureAgent\debugger-agent.jar=file:/C:/Users/honey.rao/AppData/Local/Temp/capture1.props
+ tail字符串表示的是-javaagent的参数name和value,通过解析参数可以获得jar文件和这个jar的参数值,而这个jar文件中的manifest是包含Premain-Class属性的，这个属性指向带有premain方法的class
+
  */
 JNIEXPORT jint JNICALL
 DEF_Agent_OnLoad(JavaVM *vm, char *tail, void * reserved) {
     JPLISInitializationError initerror  = JPLIS_INIT_ERROR_NONE;
     jint                     result     = JNI_OK;
-    JPLISAgent *             agent      = NULL;
+    JPLISAgent *             agent      = NULL;//
 
+//1.创建JPLISAgent对象，createNewJPLISAgent方法在JPLISAgent.c中
     initerror = createNewJPLISAgent(vm, &agent);
     if ( initerror == JPLIS_INIT_ERROR_NONE ) {
         int             oldLen, newLen;
@@ -157,6 +178,7 @@ DEF_Agent_OnLoad(JavaVM *vm, char *tail, void * reserved) {
 
         /*
          * Parse <jarfile>[=options] into jarfile and options
+            //2.解析路径获取Premain-Class
          */
         if (parseArgumentTail(tail, &jarfile, &options) != 0) {
             fprintf(stderr, "-javaagent: memory allocation failure.\n");
@@ -171,15 +193,18 @@ DEF_Agent_OnLoad(JavaVM *vm, char *tail, void * reserved) {
          * Open zip/jar file and parse archive. If can't be opened or
          * not a zip file return error. Also if Premain-Class attribute
          * isn't present we return an error.
+
+         读取MANIFEST.MF属性,readAttributes方法在jarFacade.h中定义的
          */
         attributes = readAttributes(jarfile);
         if (attributes == NULL) {
             fprintf(stderr, "Error opening zip file or JAR manifest missing : %s\n", jarfile);
-            free(jarfile);
+            free(jarfile);//释放内存
             if (options != NULL) free(options);
             return JNI_ERR;
         }
 
+        //获取Premain-Class属性的值,Premain-Class: org.apache.skywalking.apm.agent.SkyWalkingAgent
         premainClass = getAttribute(attributes, "Premain-Class");
         if (premainClass == NULL) {
             fprintf(stderr, "Failed to find Premain-Class manifest attribute in %s\n",
@@ -246,7 +271,7 @@ DEF_Agent_OnLoad(JavaVM *vm, char *tail, void * reserved) {
 
     switch (initerror) {
     case JPLIS_INIT_ERROR_NONE:
-      result = JNI_OK;
+      result = JNI_OK;//表示成功
       break;
     case JPLIS_INIT_ERROR_CANNOT_CREATE_NATIVE_AGENT:
       result = JNI_ERR;
@@ -439,6 +464,7 @@ DEF_Agent_OnUnload(JavaVM *vm) {
  * Invoked by the java launcher to load an agent in the main executable JAR.
  * The Launcher-Agent-Class attribute in the main manifest of the JAR file
  * is the agent class.
+ 加载Launcher-Agent-Class属性指定的类
  *
  * Returns JNI_OK if the agent is loaded and initialized; JNI_ERR if this
  * function fails, possibly with a pending exception.
@@ -547,7 +573,9 @@ jint loadAgent(JNIEnv* env, jstring path) {
  *  When the VMInit handler runs, we remove the VMInit handler and install a
  *  ClassFileLoadHook handler.
  */
-
+/**
+** VMInit初始化事件的绑定监听,当VM初始化后，就会回调这个方法
+**/
 void JNICALL
 eventHandlerVMInit( jvmtiEnv *      jvmtienv,
                     JNIEnv *        jnienv,
@@ -576,6 +604,8 @@ eventHandlerVMInit( jvmtiEnv *      jvmtienv,
         agent->mJarfile = NULL;
 
         outstandingException = preserveThrowable(jnienv);
+
+        //处理java的启动,这个processJavaStart方法在JPLISAgent.c中
         success = processJavaStart( environment->mAgent,
                                     jnienv);
         restoreThrowable(jnienv, outstandingException);
