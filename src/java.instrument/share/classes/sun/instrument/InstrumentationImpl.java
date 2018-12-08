@@ -427,7 +427,9 @@ public class InstrumentationImpl implements Instrumentation {
                             String  optionsString)
             throws Throwable {
 
+        //获取类加载器
         ClassLoader mainAppLoader   = ClassLoader.getSystemClassLoader();
+        //通过类加载器加载代理类
         Class<?>    javaAgentClass  = mainAppLoader.loadClass(classname);
 
         Method m = null;
@@ -451,6 +453,8 @@ public class InstrumentationImpl implements Instrumentation {
         // the lookup failed for the 2-arg method (same as JDK5.0).
 
         try {
+            //反射获取代理类指定名称的方法对象,如:premain方法
+            //先尝试获取多个参数的
             m = javaAgentClass.getDeclaredMethod( methodname,
                                  new Class<?>[] {
                                      String.class,
@@ -466,6 +470,7 @@ public class InstrumentationImpl implements Instrumentation {
         if (m == null) {
             // now try the declared 1-arg method
             try {
+                //如果上没有两个参数的方法,则获取只有一个参数的方法
                 m = javaAgentClass.getDeclaredMethod(methodname,
                                                  new Class<?>[] { String.class });
             } catch (NoSuchMethodException x) {
@@ -506,9 +511,11 @@ public class InstrumentationImpl implements Instrumentation {
         // make it accessible so we can call it
         // Note: The spec says the following:
         //     The agent class must implement a public static premain method...
+        //设置为public可访问
         setAccessible(m, true);
 
         // invoke the 1 or 2-arg method
+        //反射调用目标方法,即premain或者是agentmain
         if (twoArgAgent) {
             m.invoke(null, new Object[] { optionsString, this });
         } else {
@@ -521,7 +528,7 @@ public class InstrumentationImpl implements Instrumentation {
     loadClassAndCallPremain(    String  classname,
                                 String  optionsString)
             throws Throwable {
-
+        //调用名为premain的方法
         loadClassAndStartAgent( classname, "premain", optionsString );
     }
 

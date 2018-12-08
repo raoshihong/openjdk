@@ -374,7 +374,9 @@ recordCommandLineData(  JPLISAgent *    agent,
         if (optionsString != NULL) {
             strcpy(ourCopyOfOptionsString, optionsString);
         }
+        //赋值代理对象名称,即InstrumentationImpl
         agent->mAgentClassName = ourCopyOfAgentClassName;
+        //赋值方法引用,即loadClassAndCallPremain
         agent->mOptionsString = ourCopyOfOptionsString;
     }
 

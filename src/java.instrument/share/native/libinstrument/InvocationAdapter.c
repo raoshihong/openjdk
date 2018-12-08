@@ -259,6 +259,7 @@ DEF_Agent_OnLoad(JavaVM *vm, char *tail, void * reserved) {
         /*
          * Track (record) the agent class name and options data
          */
+         //设置代理对象和方法名
         initerror = recordCommandLineData(agent, premainClass, options);
 
         /*
