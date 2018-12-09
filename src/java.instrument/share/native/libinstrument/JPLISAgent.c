@@ -435,6 +435,7 @@ processJavaStart(   JPLISAgent *    agent,
      */
     if ( result ) {
         //调用InstrumentationImpl中的loadClassAndCallPremain方法
+        //mAgentClassName是Instrumentation对象,mOptionsString是premain方法
         result = startJavaAgent(agent, jnienv,
                                 agent->mAgentClassName, agent->mOptionsString,
                                 agent->mPremainCaller);
@@ -452,7 +453,7 @@ processJavaStart(   JPLISAgent *    agent,
 }
 
 /**
-* 启动代理
+* 启动代理，并调用premain方法
 */
 jboolean
 startJavaAgent( JPLISAgent *    agent,
@@ -636,7 +637,9 @@ commandStringIntoJavaStrings(  JNIEnv *        jnienv,
     return !errorOutstanding;
 }
 
-
+/**
+invoke调用代理方法
+**/
 jboolean
 invokeJavaAgentMainMethod( JNIEnv *    jnienv,
                            jobject     instrumentationImpl,
@@ -647,6 +650,7 @@ invokeJavaAgentMainMethod( JNIEnv *    jnienv,
 
     jplis_assert(mainCallingMethod != NULL);
     if ( mainCallingMethod != NULL ) {
+        //通过底层的调用,来調用instrumentation中的方法
         (*jnienv)->CallVoidMethod(  jnienv,
                                     instrumentationImpl,
                                     mainCallingMethod,
@@ -675,7 +679,7 @@ setLivePhaseEventHandlers(  JPLISAgent * agent) {
      */
     memset(&callbacks, 0, sizeof(callbacks));
 
-    //在这里绑定回调方法
+    //在这里绑定回调方法,eventHandlerClassFileLoadHook方法在InvocationAdapter中
     callbacks.ClassFileLoadHook = &eventHandlerClassFileLoadHook;
 
     //设置监听ClassFileLoad的监听事件
@@ -905,6 +909,8 @@ transformClassFile(             JPLISAgent *            agent,
             }
             jplis_assert(agent->mInstrumentationImpl != NULL);
             jplis_assert(agent->mTransform != NULL);
+
+            //调用ClassFileTransform中的transform方法
             transformedBufferObject = (*jnienv)->CallObjectMethod(
                                                 jnienv,
                                                 agent->mInstrumentationImpl,

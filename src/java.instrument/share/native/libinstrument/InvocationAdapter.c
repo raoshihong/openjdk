@@ -618,6 +618,9 @@ eventHandlerVMInit( jvmtiEnv *      jvmtienv,
     }
 }
 
+/**
+** 用来监听ClassFileLoad事件,当加载Class文件时就会回调这个方法
+**/
 void JNICALL
 eventHandlerClassFileLoadHook(  jvmtiEnv *              jvmtienv,
                                 JNIEnv *                jnienv,
@@ -636,6 +639,7 @@ eventHandlerClassFileLoadHook(  jvmtiEnv *              jvmtienv,
     /* if something is internally inconsistent (no agent), just silently return without touching the buffer */
     if ( environment != NULL ) {
         jthrowable outstandingException = preserveThrowable(jnienv);
+        //
         transformClassFile( environment->mAgent,
                             jnienv,
                             loader,
