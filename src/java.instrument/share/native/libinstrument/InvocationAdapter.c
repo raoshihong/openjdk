@@ -159,6 +159,8 @@ convertCapabilityAttributes(const jarAttribute* attributes, JPLISAgent* agent) {
  -javaagent:C:\Users\honey.rao\.IntelliJIdea2018.2\system\captureAgent\debugger-agent.jar=file:/C:/Users/honey.rao/AppData/Local/Temp/capture1.props
  tail字符串表示的是-javaagent的参数name和value,通过解析参数可以获得jar文件和这个jar的参数值,而这个jar文件中的manifest是包含Premain-Class属性的，这个属性指向带有premain方法的class
 
+JNIEXPORT jint JNICALL 表示jni调用
+
  */
 JNIEXPORT jint JNICALL
 DEF_Agent_OnLoad(JavaVM *vm, char *tail, void * reserved) {

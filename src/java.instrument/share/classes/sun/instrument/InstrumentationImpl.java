@@ -363,6 +363,12 @@ public class InstrumentationImpl implements Instrumentation {
 
 
     /*
+     *  全都定义的native方法,这些方法通过jni会生成c语言中的函数定义,而具体的实现会已经被写好,可以看src/java/instrument/share/native/libinstrument
+     *  而通过调用System.loadLibrary(“instrument”);来加载instrument.dll文件
+     *
+     *  具体实现在InstrumentationImplNativeMethods.c中,这个文件最终编译输出的就是上面的instrument.dll
+     *
+     *
      *  Natives
      */
     private native boolean
@@ -402,6 +408,7 @@ public class InstrumentationImpl implements Instrumentation {
     setNativeMethodPrefixes(long nativeAgent, String[] prefixes, boolean isRetransformable);
 
     static {
+        //这里加载instrument.dll模块
         System.loadLibrary("instrument");
     }
 

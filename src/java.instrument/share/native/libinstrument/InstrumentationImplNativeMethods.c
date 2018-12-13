@@ -58,10 +58,13 @@ DEF_STATIC_JNI_OnLoad
  * Class:     sun_instrument_InstrumentationImpl
  * Method:    isModifiableClass0
  * Signature: (Ljava/lang/Class;)Z
+ *
+ * 这个方法会被JNI底层调用
  */
 JNIEXPORT jboolean JNICALL
 Java_sun_instrument_InstrumentationImpl_isModifiableClass0
   (JNIEnv * jnienv, jobject implThis, jlong agent, jclass clazz) {
+    //isModifiableClass  调用InstrumentationImpl.java中的方法
     return isModifiableClass(jnienv, (JPLISAgent*)(intptr_t)agent, clazz);
 }
 
