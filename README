@@ -12,3 +12,6 @@ See http://openjdk.java.net/ for more information about the OpenJDK
 Community and the JDK.
 
 这个已经是获取好的源码了,里面包括cpp和java文件，只需要编译运行进行调试即可学习
+
+所有的源码都在openjdk/src下,在这下面根据java中不同的功能分为了不同的目录,java基本的类比如我们经常使用的rt.jar下的类都在java.base包下,instrument相关的则放到java.instrument下
+虚拟机相关的则放到hotspot下面
