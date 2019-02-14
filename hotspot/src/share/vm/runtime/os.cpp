@@ -771,11 +771,14 @@ long os::random() {
 // to do so in a context in which races are impossible, or should do appropriate
 // locking.
 
+//启动线程,在启动一个线程时,会加互斥锁MutexLockerEx
 void os::start_thread(Thread* thread) {
   // guard suspend/resume
   MutexLockerEx ml(thread->SR_lock(), Mutex::_no_safepoint_check_flag);
   OSThread* osthread = thread->osthread();
   osthread->set_state(RUNNABLE);
+
+  //调用os_linux.cpp中的pd_start_thread方法唤醒创建的新线程
   pd_start_thread(thread);
 }
 

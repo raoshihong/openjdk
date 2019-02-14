@@ -2964,7 +2964,7 @@ static void thread_entry(JavaThread* thread, TRAPS) {
                           THREAD);
 }
 
-
+//定义JVM_StartThread方法
 JVM_ENTRY(void, JVM_StartThread(JNIEnv* env, jobject jthread))
   JVMWrapper("JVM_StartThread");
   JavaThread *native_thread = NULL;
@@ -3000,8 +3000,10 @@ JVM_ENTRY(void, JVM_StartThread(JNIEnv* env, jobject jthread))
       // size_t (an unsigned type), so avoid passing negative values which would
       // result in really large stacks.
       size_t sz = size > 0 ? (size_t) size : 0;
+       //这里的JavaThread类在thread.hpp中定义,调用了JavaThread::JavaThread构造方法,在thread.cpp中实现,并在该构造方法中调用os_linux.cpp中的os::create_thread创建线程
       native_thread = new JavaThread(&thread_entry, sz);
 
+      // 在上面创建JavaThread可能因为内存不足导致创建线程失败
       // At this point it may be possible that no osthread was created for the
       // JavaThread due to lack of memory. Check for this situation and throw
       // an exception if necessary. Eventually we may want to change this so
@@ -3010,7 +3012,7 @@ JVM_ENTRY(void, JVM_StartThread(JNIEnv* env, jobject jthread))
       // JavaThread constructor.
       if (native_thread->osthread() != NULL) {
         // Note: the current thread is not being used within "prepare".
-        native_thread->prepare(jthread);
+        native_thread->prepare(jthread);//调用JavaThread中的prepare方法
       }
     }
   }
@@ -3033,6 +3035,7 @@ JVM_ENTRY(void, JVM_StartThread(JNIEnv* env, jobject jthread))
               "unable to create new native thread");
   }
 
+  //调用Thread.cpp中的start方法，在start方法中调用os_linux.cpp中的os::start_thread(thread);启动线程,前面只是创建线程和准备线程,这里才是真正的启动线程
   Thread::start(native_thread);
 
 JVM_END

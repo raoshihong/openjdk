@@ -733,6 +733,7 @@ static bool _thread_safety_check(Thread* thread) {
 }
 
 // Thread start routine for all newly created threads
+// 实现java_start 方法,在调用Thread::start方法,就会调用到这里来,在这里调用了Thread对象中的run方法
 static void *java_start(Thread *thread) {
   // Try to randomize the cache line index of hot stack frames.
   // This helps when threads of the same stack traces evict each other's
@@ -787,11 +788,13 @@ static void *java_start(Thread *thread) {
   }
 
   // call one more level start routine
+  // 调用线程Thread对象中的run方法,这个run方法在java类中定义
   thread->run();
 
   return 0;
 }
 
+//创建线程
 bool os::create_thread(Thread* thread, ThreadType thr_type, size_t stack_size) {
   assert(thread->osthread() == NULL, "caller responsible");
 
@@ -861,6 +864,8 @@ bool os::create_thread(Thread* thread, ThreadType thr_type, size_t stack_size) {
     }
 
     pthread_t tid;
+
+    //pthread_create是unix系统中的方法,通过这个方法创建系统线程并指定java_start方法的引用
     int ret = pthread_create(&tid, &attr, (void* (*)(void*)) java_start, thread);
 
     pthread_attr_destroy(&attr);
@@ -973,11 +978,14 @@ bool os::create_attached_thread(JavaThread* thread) {
   return true;
 }
 
+//真正唤醒创建的线程
 void os::pd_start_thread(Thread* thread) {
   OSThread * osthread = thread->osthread();
   assert(osthread->get_state() != INITIALIZED, "just checking");
   Monitor* sync_with_child = osthread->startThread_lock();
   MutexLockerEx ml(sync_with_child, Mutex::_no_safepoint_check_flag);
+
+  //唤醒,并启动子线程
   sync_with_child->notify();
 }
 

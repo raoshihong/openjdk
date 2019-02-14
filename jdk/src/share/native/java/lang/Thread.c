@@ -40,7 +40,7 @@
 
 #define ARRAY_LENGTH(a) (sizeof(a)/sizeof(a[0]))
 
-static JNINativeMethod methods[] = {
+static JNINativeMethod methods[] = {//Thread.java中的native方法与jvm中的方法的引用一一对应,当调用这些方法时,实际就是调用jvm中的方法,这些方法的实现都在jvm.cpp中
     {"start0",           "()V",        (void *)&JVM_StartThread},
     {"stop0",            "(" OBJ ")V", (void *)&JVM_StopThread},
     {"isAlive",          "()Z",        (void *)&JVM_IsThreadAlive},

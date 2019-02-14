@@ -456,7 +456,7 @@ void Thread::set_priority(Thread* thread, ThreadPriority priority) {
   (void)os::set_priority(thread, priority);
 }
 
-
+//启动线程
 void Thread::start(Thread* thread) {
   trace("start", thread);
   // Start is different from resume in that its safety is guaranteed by context or
@@ -470,6 +470,8 @@ void Thread::start(Thread* thread) {
       java_lang_Thread::set_thread_status(((JavaThread*)thread)->threadObj(),
                                           java_lang_Thread::RUNNABLE);
     }
+
+    //在这里通过os启动系统线程,调用的是os.cpp中的start_thread方法
     os::start_thread(thread);
   }
 }
@@ -1563,6 +1565,7 @@ void JavaThread::block_if_vm_exited() {
 // Remove this ifdef when C1 is ported to the compiler interface.
 static void compiler_thread_entry(JavaThread* thread, TRAPS);
 
+//JavaThread的构造方法
 JavaThread::JavaThread(ThreadFunction entry_point, size_t stack_sz) :
   Thread()
 #if INCLUDE_ALL_GCS
@@ -1581,6 +1584,7 @@ JavaThread::JavaThread(ThreadFunction entry_point, size_t stack_sz) :
   os::ThreadType thr_type = os::java_thread;
   thr_type = entry_point == &compiler_thread_entry ? os::compiler_thread :
                                                      os::java_thread;
+  //通过os对象调用create_threa创建对象,并传递Thread对象进去,create_thread方法在os_linux.cpp中
   os::create_thread(this, thr_type, stack_sz);
   // The _osthread may be NULL here because we ran out of memory (too many threads active).
   // We need to throw and OutOfMemoryError - however we cannot do this here because the caller
