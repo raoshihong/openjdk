@@ -795,10 +795,12 @@ static void *java_start(Thread *thread) {
 }
 
 //创建线程
+//传递JavaThread线程对象,线程类型,线程栈大小
 bool os::create_thread(Thread* thread, ThreadType thr_type, size_t stack_size) {
   assert(thread->osthread() == NULL, "caller responsible");
 
   // Allocate the OSThread object
+  //创建一个OSThread对象
   OSThread* osthread = new OSThread(NULL, NULL);
   if (osthread == NULL) {
     return false;
@@ -810,6 +812,7 @@ bool os::create_thread(Thread* thread, ThreadType thr_type, size_t stack_size) {
   // Initial state is ALLOCATED but not INITIALIZED
   osthread->set_state(ALLOCATED);
 
+    //设置thread的osthread属性
   thread->set_osthread(osthread);
 
   // init thread attributes
@@ -817,8 +820,13 @@ bool os::create_thread(Thread* thread, ThreadType thr_type, size_t stack_size) {
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
+// 设置线程栈大小
   // stack size
-  if (os::Linux::supports_variable_stack_size()) {
+  if (os::Linux::supports_variable_stack_size()) {//是否支持设置栈大小
+     //如果用户创建线程时未指定栈大小,对于JavaThread会看是否设置了-Xss或ThreadStackSize；
+     //如果未设置，则采用系统默认值。对于64位操作系统，默认为1M;
+     //操作系统栈大小（ulimit -s）：这个配置只影响进程的初始线程；后续用pthread_create创建的线程都可以指定栈大小。
+     //HotSpot VM为了能精确控制Java线程的栈大小，特意不使用进程的初始线程（primordial thread）作为Java线程
     // calculate stack size if it's not specified by caller
     if (stack_size == 0) {
       stack_size = os::Linux::default_stack_size(thr_type);
@@ -827,6 +835,7 @@ bool os::create_thread(Thread* thread, ThreadType thr_type, size_t stack_size) {
       case os::java_thread:
         // Java threads use ThreadStackSize which default value can be
         // changed with the flag -Xss
+        ////读取Xss和ThreadStackSize
         assert (JavaThread::stack_size_at_create() > 0, "this should be set");
         stack_size = JavaThread::stack_size_at_create();
         break;
@@ -844,7 +853,7 @@ bool os::create_thread(Thread* thread, ThreadType thr_type, size_t stack_size) {
         break;
       }
     }
-
+    //栈最小为48k
     stack_size = MAX2(stack_size, os::Linux::min_stack_allowed);
     pthread_attr_setstacksize(&attr, stack_size);
   } else {
@@ -854,6 +863,7 @@ bool os::create_thread(Thread* thread, ThreadType thr_type, size_t stack_size) {
   // glibc guard page
   pthread_attr_setguardsize(&attr, os::Linux::default_guard_size(thr_type));
 
+    //设置线程的状态
   ThreadState state;
 
   {
@@ -885,6 +895,7 @@ bool os::create_thread(Thread* thread, ThreadType thr_type, size_t stack_size) {
     osthread->set_pthread_id(tid);
 
     // Wait until child thread is either initialized or aborted
+    //等待直到所有的子线程都初始化或者异常了,再执行后面的操作
     {
       Monitor* sync_with_child = osthread->startThread_lock();
       MutexLockerEx ml(sync_with_child, Mutex::_no_safepoint_check_flag);

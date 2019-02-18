@@ -2979,6 +2979,7 @@ JVM_ENTRY(void, JVM_StartThread(JNIEnv* env, jobject jthread))
   {
     // Ensure that the C++ Thread and OSThread structures aren't freed before
     // we operate.
+    //mu 表示加锁
     MutexLocker mu(Threads_lock);
 
     // Since JDK 5 the java.lang.Thread threadStatus is used to prevent
@@ -2987,50 +2988,56 @@ JVM_ENTRY(void, JVM_StartThread(JNIEnv* env, jobject jthread))
     // there is a small window between the Thread object being created
     // (with its JavaThread set) and the update to its threadStatus, so we
     // have to check for this
+    // 检测threadStatus,在Thread.java中的start方法中首先就判断了threadStatus,
+    // 这里再次判断,是因为在创建和更新时有可能都会更改这个状态,无法保证原子性操作,所以这里再次进行check判断
     if (java_lang_Thread::thread(JNIHandles::resolve_non_null(jthread)) != NULL) {
       throw_illegal_thread_state = true;
     } else {
       // We could also check the stillborn flag to see if this thread was already stopped, but
       // for historical reasons we let the thread detect that itself when it starts running
+      // 检测这个线程是否已经停止了,
 
-      jlong size =
-             java_lang_Thread::stackSize(JNIHandles::resolve_non_null(jthread));
+      jlong size = java_lang_Thread::stackSize(JNIHandles::resolve_non_null(jthread));
       // Allocate the C++ Thread structure and create the native thread.  The
       // stack size retrieved from java is signed, but the constructor takes
       // size_t (an unsigned type), so avoid passing negative values which would
       // result in really large stacks.
+      // 分配线程的stackSize,构造方法可以不用传递,默认为0
       size_t sz = size > 0 ? (size_t) size : 0;
        //这里的JavaThread类在thread.hpp中定义,调用了JavaThread::JavaThread构造方法,在thread.cpp中实现,并在该构造方法中调用os_linux.cpp中的os::create_thread创建线程
       native_thread = new JavaThread(&thread_entry, sz);
 
-      // 在上面创建JavaThread可能因为内存不足导致创建线程失败
+      // 在上面创建JavaThread可能因为内存不足导致创建线程失败，则抛出相关的异常
       // At this point it may be possible that no osthread was created for the
       // JavaThread due to lack of memory. Check for this situation and throw
       // an exception if necessary. Eventually we may want to change this so
       // that we only grab the lock if the thread was created successfully -
       // then we can also do this check and throw the exception in the
       // JavaThread constructor.
-      if (native_thread->osthread() != NULL) {
+      if (native_thread->osthread() != NULL) {//表示已经创建了osthread了,则为线程做准备
         // Note: the current thread is not being used within "prepare".
         native_thread->prepare(jthread);//调用JavaThread中的prepare方法
       }
     }
   }
 
+  // 如果线程状态不对,则抛出异常
   if (throw_illegal_thread_state) {
     THROW(vmSymbols::java_lang_IllegalThreadStateException());
   }
 
   assert(native_thread != NULL, "Starting null thread?");
 
+    //前面创建线程时,可能因为各种原因,比如内存不足,达到最大线程数,导致创建osthread失败
   if (native_thread->osthread() == NULL) {
     // No one should hold a reference to the 'native_thread'.
-    delete native_thread;
+    delete native_thread;//释放native_thread的内存空间
     if (JvmtiExport::should_post_resource_exhausted()) {
       JvmtiExport::post_resource_exhausted(
         JVMTI_RESOURCE_EXHAUSTED_OOM_ERROR | JVMTI_RESOURCE_EXHAUSTED_THREADS,
         "unable to create new native thread");
     }
+    //抛出异常信息,表示不能创建本地线程
     THROW_MSG(vmSymbols::java_lang_OutOfMemoryError(),
               "unable to create new native thread");
   }

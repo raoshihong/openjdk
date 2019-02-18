@@ -176,9 +176,18 @@ HS_DTRACE_PROBE_DECL5(hotspot, thread__stop, char*, intptr_t,
 
 // ======= Thread ========
 // Support for forcing alignment of thread objects for biased locking
+//给线程分配内存空间
 void* Thread::allocate(size_t size, bool throw_excpt, MEMFLAGS flags) {
-  if (UseBiasedLocking) {
-    const int alignment = markOopDesc::biased_lock_alignment;
+  if (UseBiasedLocking) {//使用偏向锁
+    //alignment=2<<10,对于偏向锁，地址要对齐，即低10位为0
+    //根据偏向锁的实现，要求线程指向地址的低10位为0，那么该如何实现呢？
+    //可以看到此处在申请内存的时候，对原申请大小做了调整；
+    //假设申请到到地址为0xA11CA(低10位为0111001010),则0xA2000是满足条件的地址，这两地址间相差0x0E36(小于1<<10),
+    //也就是说原申请内存大小＋alignment,则可以指针后移，找到符合条件的地址;
+    //那为什么要减去sizeof(intptr_t)?因为指针后移最多为alignment-1，即可找到满足条件的地址;
+    //而第一位存储的是_real_malloc_address,占用内存空间为sizeof(intptr_t)
+    //sizeof(intptr_t)是为了跨平台定义的类型，在64位平台下为8bytes,32位平台为4bytes;
+    const int alignment = markOopDesc::biased_lock_alignment;//获取偏向锁的偏移量
     size_t aligned_size = size + (alignment - sizeof(intptr_t));
     void* real_malloc_addr = throw_excpt? AllocateHeap(aligned_size, flags, CURRENT_PC)
                                           : AllocateHeap(aligned_size, flags, CURRENT_PC,
@@ -194,7 +203,7 @@ void* Thread::allocate(size_t size, bool throw_excpt, MEMFLAGS flags) {
     }
     ((Thread*) aligned_addr)->_real_malloc_address = real_malloc_addr;
     return aligned_addr;
-  } else {
+  } else {//没有使用偏向锁
     return throw_excpt? AllocateHeap(size, flags, CURRENT_PC)
                        : AllocateHeap(size, flags, CURRENT_PC, AllocFailStrategy::RETURN_NULL);
   }
@@ -1508,13 +1517,15 @@ SATBMarkQueueSet JavaThread::_satb_mark_queue_set;
 DirtyCardQueueSet JavaThread::_dirty_card_queue_set;
 #endif // INCLUDE_ALL_GCS
 
+//JavaThread的构造方法
 JavaThread::JavaThread(bool is_attaching_via_jni) :
-  Thread()
+  Thread() //这里会调用Thread的new方法,因为在Thread中重写了new操作
 #if INCLUDE_ALL_GCS
   , _satb_mark_queue(&_satb_mark_queue_set),
   _dirty_card_queue(&_dirty_card_queue_set)
 #endif // INCLUDE_ALL_GCS
 {
+  //初始化线程
   initialize();
   if (is_attaching_via_jni) {
     _jni_attach_state = _attaching_via_jni;
@@ -1567,7 +1578,7 @@ static void compiler_thread_entry(JavaThread* thread, TRAPS);
 
 //JavaThread的构造方法
 JavaThread::JavaThread(ThreadFunction entry_point, size_t stack_sz) :
-  Thread()
+  Thread()//这里会调用Thread的new方法,因为在Thread中重写了new操作
 #if INCLUDE_ALL_GCS
   , _satb_mark_queue(&_satb_mark_queue_set),
   _dirty_card_queue(&_dirty_card_queue_set)
@@ -1576,7 +1587,7 @@ JavaThread::JavaThread(ThreadFunction entry_point, size_t stack_sz) :
   if (TraceThreadEvents) {
     tty->print_cr("creating thread %p", this);
   }
-  initialize();
+  initialize();//调用初始化方法
   _jni_attach_state = _not_attaching_via_jni;
   set_entry_point(entry_point);
   // Create the native thread itself.
@@ -2999,6 +3010,7 @@ ThreadPriority JavaThread::java_priority() const {
   return priority;
 }
 
+//
 void JavaThread::prepare(jobject jni_thread, ThreadPriority prio) {
 
   assert(Threads_lock->owner() == Thread::current(), "must have threads lock");

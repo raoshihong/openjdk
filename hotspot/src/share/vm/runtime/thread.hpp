@@ -113,12 +113,14 @@ class Thread: public ThreadShadow {
   // Support for forcing alignment of thread objects for biased locking
   void*       _real_malloc_address;
  public:
+ // 重写new操作,实现调用Thread的allocate来分配内存空间
   void* operator new(size_t size) throw() { return allocate(size, true); }
   void* operator new(size_t size, const std::nothrow_t& nothrow_constant) throw() {
     return allocate(size, false); }
   void  operator delete(void* p);
 
  protected:
+    //定义分配内存空间的方法
    static void* allocate(size_t size, bool throw_excpt, MEMFLAGS flags = mtThread);
  private:
 
@@ -631,10 +633,10 @@ protected:
  public:
   volatile intptr_t _Stalled ;
   volatile int _TypeTag ;
-  ParkEvent * _ParkEvent ;                     // for synchronized()
-  ParkEvent * _SleepEvent ;                    // for Thread.sleep
-  ParkEvent * _MutexEvent ;                    // for native internal Mutex/Monitor
-  ParkEvent * _MuxEvent ;                      // for low-level muxAcquire-muxRelease
+  ParkEvent * _ParkEvent ;                     // for synchronized()  //用于synchronized同步块和Object.wait()
+  ParkEvent * _SleepEvent ;                    // for Thread.sleep  //用于Thread.sleep
+  ParkEvent * _MutexEvent ;                    // for native internal Mutex/Monitor 用于本机内部锁
+  ParkEvent * _MuxEvent ;                      // for low-level muxAcquire-muxRelease  用于锁的申请和释放
   int NativeSyncRecursion ;                    // diagnostic
 
   volatile int _OnTrap ;                       // Resume-at IP delta
@@ -779,12 +781,12 @@ typedef void (*ThreadFunction)(JavaThread*, TRAPS);
 class JavaThread: public Thread {
   friend class VMStructs;
  private:
-  JavaThread*    _next;                          // The next thread in the Threads list
-  oop            _threadObj;                     // The Java level thread object
+  JavaThread*    _next;                          // The next thread in the Threads list,JavaThread集合,记录下一个JavaThread对象
+  oop            _threadObj;                     // The Java level thread object  记录java级别的线程对象
 
 #ifdef ASSERT
  private:
-  int _java_call_counter;
+  int _java_call_counter;  //调用次数
 
  public:
   int  java_call_counter()                       { return _java_call_counter; }
@@ -880,7 +882,7 @@ class JavaThread: public Thread {
   // executing native code after the VM itself is terminated.
   volatile TerminatedTypes _terminated;
   // suspend/resume support
-  volatile bool         _suspend_equivalent;     // Suspend equivalent condition
+  volatile bool         _suspend_equivalent;     // Suspend equivalent condition  线程是否被挂起
   jint                  _in_deopt_handler;       // count of deoptimization
                                                  // handlers thread is in
   volatile bool         _doing_unsafe_access;    // Thread may fault due to unsafe access
@@ -1162,6 +1164,7 @@ class JavaThread: public Thread {
   bool handle_special_suspend_equivalent_condition() {
     assert(is_suspend_equivalent(),
       "should only be called in a suspend equivalence condition");
+      //ml方法表示释放锁
     MutexLockerEx ml(SR_lock(), Mutex::_no_safepoint_check_flag);
     bool ret = is_external_suspend();
     if (!ret) {
@@ -1754,7 +1757,8 @@ public:
 
   // JSR166 per-thread parker
 private:
-  Parker*    _parker;
+  Parker*    _parker;////用于unsafe.park()/unpark(),供java.util.concurrent.locks.LockSupport调用，
+                        //因此它支持了java.util.concurrent的各种锁、条件变量等线程同步操作,是concurrent的实现基础
 public:
   Parker*     parker() { return _parker; }
 

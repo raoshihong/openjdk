@@ -774,6 +774,7 @@ long os::random() {
 //启动线程,在启动一个线程时,会加互斥锁MutexLockerEx
 void os::start_thread(Thread* thread) {
   // guard suspend/resume
+  // 在这里解锁
   MutexLockerEx ml(thread->SR_lock(), Mutex::_no_safepoint_check_flag);
   OSThread* osthread = thread->osthread();
   osthread->set_state(RUNNABLE);

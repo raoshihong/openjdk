@@ -145,25 +145,25 @@ class Thread implements Runnable {
         registerNatives();
     }
 
-    private volatile String name;
-    private int            priority;
+    private volatile String name;//线程名称
+    private int            priority; //线程的优先级
     private Thread         threadQ;
-    private long           eetop;
+    private long           eetop; //用于保存JavaThread线程的地址,这个JavaThread在thread.hpp中定义
 
     /* Whether or not to single_step this thread. */
     private boolean     single_step;
 
     /* Whether or not the thread is a daemon thread. */
-    private boolean     daemon = false;
+    private boolean     daemon = false;//设置为守护线程,在后端运行,如果设置为true,当整个应用都没有非daemon的线程则会退出
 
     /* JVM state */
     private boolean     stillborn = false;
 
     /* What will be run. */
-    private Runnable target;
+    private Runnable target;//目标任务
 
     /* The group of this thread */
-    private ThreadGroup group;
+    private ThreadGroup group;//线程分组
 
     /* The context ClassLoader for this thread */
     private ClassLoader contextClassLoader;
@@ -179,7 +179,7 @@ class Thread implements Runnable {
 
     /* ThreadLocal values pertaining to this thread. This map is maintained
      * by the ThreadLocal class. */
-    ThreadLocal.ThreadLocalMap threadLocals = null;
+    ThreadLocal.ThreadLocalMap threadLocals = null;//线程的本地变量,每个线程都有自己的一个threadLocals成员变量
 
     /*
      * InheritableThreadLocal values pertaining to this thread. This map is
@@ -192,7 +192,7 @@ class Thread implements Runnable {
      * not specify a stack size.  It is up to the VM to do whatever it
      * likes with this number; some VMs will ignore it.
      */
-    private long stackSize;
+    private long stackSize;//线程的栈大小
 
     /*
      * JVM-private state that persists after native thread termination.
@@ -211,7 +211,7 @@ class Thread implements Runnable {
      * initialized to indicate thread 'not yet started'
      */
 
-    private volatile int threadStatus = 0;
+    private volatile int threadStatus = 0;//线程状态
 
 
     private static synchronized long nextThreadID() {
@@ -351,12 +351,12 @@ class Thread implements Runnable {
 
     /**
      * Initializes a Thread.
-     *
-     * @param g the Thread group
-     * @param target the object whose run() method gets called
-     * @param name the name of the new Thread
+     * 在创建一个线程时初始化这个线程所需要的相关信息
+     * @param g the Thread group 线程组
+     * @param target the object whose run() method gets called  目标任务
+     * @param name the name of the new Thread 线程名称
      * @param stackSize the desired stack size for the new thread, or
-     *        zero to indicate that this parameter is to be ignored.
+     *        zero to indicate that this parameter is to be ignored.  线程栈大小
      * @param acc the AccessControlContext to inherit, or
      *            AccessController.getContext() if null
      * @param inheritThreadLocals if {@code true}, inherit initial values for
@@ -365,12 +365,14 @@ class Thread implements Runnable {
     private void init(ThreadGroup g, Runnable target, String name,
                       long stackSize, AccessControlContext acc,
                       boolean inheritThreadLocals) {
+        //线程名称不能为空,如果没有设置,默认会以Thread-作为前缀,再以nextThreadNum为编号
         if (name == null) {
             throw new NullPointerException("name cannot be null");
         }
 
         this.name = name;
 
+        //获取当前线程
         Thread parent = currentThread();
         SecurityManager security = System.getSecurityManager();
         if (g == null) {
@@ -385,7 +387,7 @@ class Thread implements Runnable {
             /* If the security doesn't have a strong opinion of the matter
                use the parent thread group. */
             if (g == null) {
-                g = parent.getThreadGroup();
+                g = parent.getThreadGroup();//将父线程的threadGroup赋值给子线程
             }
         }
 
@@ -398,6 +400,7 @@ class Thread implements Runnable {
          */
         if (security != null) {
             if (isCCLOverridden(getClass())) {
+                //检测是否有权限覆盖
                 security.checkPermission(SUBCLASS_IMPLEMENTATION_PERMISSION);
             }
         }
@@ -405,6 +408,7 @@ class Thread implements Runnable {
         g.addUnstarted();
 
         this.group = g;
+        //设置为父线程的daemon,表示初始化时,默认以父线程的相关信息为准,如果要改变则调用相关的setter方法修改,比如这里的daemon和priority
         this.daemon = parent.isDaemon();
         this.priority = parent.getPriority();
         if (security == null || isCCLOverridden(parent.getClass()))
@@ -419,8 +423,10 @@ class Thread implements Runnable {
             this.inheritableThreadLocals =
                 ThreadLocal.createInheritedMap(parent.inheritableThreadLocals);
         /* Stash the specified stack size in case the VM cares */
+        //线程的栈大小,一般不直接设置,可以通过jvm参数设置
         this.stackSize = stackSize;
 
+        //线程的id
         /* Set thread ID */
         tid = nextThreadID();
     }
@@ -696,24 +702,30 @@ class Thread implements Runnable {
      * @see        #run()
      * @see        #stop()
      */
-    public synchronized void start() {
+    public synchronized void start() {//start方法是同步方法
         /**
          * This method is not invoked for the main method thread or "system"
          * group threads created/set up by the VM. Any new functionality added
          * to this method in the future may have to also be added to the VM.
          *
          * A zero status value corresponds to state "NEW".
+         *
+         * threadStatus如果为0则表示线程为刚启动,这里的意思是同一个线程通过start()方法启动了，不能再次调用start()方法,否则抛出异常
+         *
          */
         if (threadStatus != 0)
             throw new IllegalThreadStateException();
 
         /* Notify the group that this thread is about to be started
          * so that it can be added to the group's list of threads
-         * and the group's unstarted count can be decremented. */
+         * and the group's unstarted count can be decremented.
+         * 通知group,当前线程启动,将当前线程添加到group的启动列表中,并从未启动列表中删除,这个未启动的添加操作在init方法中执行的
+         * */
         group.add(this);
 
         boolean started = false;
         try {
+            // 通过调用本地的native方法start0启动线程,实际是通过操作系统os创建线程
             start0();
             started = true;
         } finally {
