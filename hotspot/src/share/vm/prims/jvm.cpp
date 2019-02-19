@@ -2956,10 +2956,11 @@ static void thread_entry(JavaThread* thread, TRAPS) {
   HandleMark hm(THREAD);
   Handle obj(THREAD, thread->threadObj());
   JavaValue result(T_VOID);
+  //所有来自虚拟机对Java函数的调用最终都将由JavaCalls模块来完成，JavaCalls将通过call_helper()来执行Java方法并返回调用结果，并最终调用StubRoutines::call_stub()来执行Java方法
   JavaCalls::call_virtual(&result,
                           obj,
                           KlassHandle(THREAD, SystemDictionary::Thread_klass()),
-                          vmSymbols::run_method_name(),
+                          vmSymbols::run_method_name(),//这里表示调用Thread中的run方法
                           vmSymbols::void_method_signature(),
                           THREAD);
 }
@@ -3042,7 +3043,8 @@ JVM_ENTRY(void, JVM_StartThread(JNIEnv* env, jobject jthread))
               "unable to create new native thread");
   }
 
-  //调用Thread.cpp中的start方法，在start方法中调用os_linux.cpp中的os::start_thread(thread);启动线程,前面只是创建线程和准备线程,这里才是真正的启动线程
+  //调用Thread.cpp中的start方法，在start方法中调用os_linux.cpp中的os::start_thread(thread);
+  //能走到这里,就表示线程正常启动运行了,所以将线程的状态改为RUNNABLE
   Thread::start(native_thread);
 
 JVM_END

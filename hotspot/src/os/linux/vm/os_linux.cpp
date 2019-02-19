@@ -733,7 +733,7 @@ static bool _thread_safety_check(Thread* thread) {
 }
 
 // Thread start routine for all newly created threads
-// 实现java_start 方法,在调用Thread::start方法,就会调用到这里来,在这里调用了Thread对象中的run方法
+// 实现java_start 方法,在调用Thread::start方法,就会调用到这里来,在这里调用了thread.cpp中JavaThread对象中的run方法
 static void *java_start(Thread *thread) {
   // Try to randomize the cache line index of hot stack frames.
   // This helps when threads of the same stack traces evict each other's
@@ -741,7 +741,9 @@ static void *java_start(Thread *thread) {
   // from different JVM instances. The benefit is especially true for
   // processors with hyperthreading technology.
   static int counter = 0;
+  //获取当前创建线程的id
   int pid = os::current_process_id();
+  //通过alloca在栈中申请存储空间，当出了这个方法的作用域,就会回收该空间,malloc是在堆中分配空间
   alloca(((pid ^ counter++) & 7) * 128);
 
   ThreadLocalStorage::set_thread(thread);
@@ -751,7 +753,7 @@ static void *java_start(Thread *thread) {
 
   // non floating stack LinuxThreads needs extra check, see above
   if (!_thread_safety_check(thread)) {
-    // notify parent thread
+    // notify parent thread  唤醒父线程
     MutexLockerEx ml(sync, Mutex::_no_safepoint_check_flag);
     osthread->set_state(ZOMBIE);
     sync->notify_all();
@@ -760,14 +762,16 @@ static void *java_start(Thread *thread) {
 
   // thread_id is kernel thread id (similar to Solaris LWP id)
   osthread->set_thread_id(os::Linux::gettid());
-
-  if (UseNUMA) {
+//优先尝试在请求线程当前所处的CPU的Local内存上分配空间。
+ //如果local内存不足，优先淘汰local内存中无用的Page
+  if (UseNUMA) {//可以通过jvm -XX:+UseNUMA来设置
     int lgrp_id = os::numa_get_group_id();
     if (lgrp_id != -1) {
       thread->set_lgrp_id(lgrp_id);
     }
   }
   // initialize signal mask for this thread
+  // 调用pthread_sigmask初始化signal mask:VM线程处理BREAK_SIGNAL信号
   os::Linux::hotspot_sigmask(thread);
 
   // initialize floating point control register
@@ -778,17 +782,23 @@ static void *java_start(Thread *thread) {
     MutexLockerEx ml(sync, Mutex::_no_safepoint_check_flag);
 
     // notify parent thread
+    // 设置状态会INITIALIZED,并通过notify_all唤醒父线程
     osthread->set_state(INITIALIZED);
     sync->notify_all();
 
     // wait until os::start_thread()
+    //在这里等待,知道父线程调用os::start_thread() 将线程标记为RUNNABLE状态为止,才执行下面的thread->run()方法,执行目标任务
+    // 一直等待父线程调用 os::start_thread()
+    //所以说,上面将osthread->set_state(INITIALIZED);设置为INITIALIZED,这里的话就会一直阻塞等待,因为java_start方法是异步的,所以在create_thread方法后会继续执行
+    //最终会在jvm.cpp的JVM_StartThread方法中调用Thread::start(native_thread);而在Thread:start中就调用了os::start_thread(),将状态标记为RUNNABLE
     while (osthread->get_state() == INITIALIZED) {
       sync->wait(Mutex::_no_safepoint_check_flag);
     }
   }
 
+    //在调用这个方法之前,会一直阻塞,知道osthread的state被设置为runnable了,才会调用这里的run方法
   // call one more level start routine
-  // 调用线程Thread对象中的run方法,这个run方法在java类中定义
+  // 调用线程Thread对象中的run方法,这个run在thread.cpp中实现,这这个run方法中真正去调用了Java中JavaThread.java这个类的run方法
   thread->run();
 
   return 0;
@@ -875,7 +885,7 @@ bool os::create_thread(Thread* thread, ThreadType thr_type, size_t stack_size) {
 
     pthread_t tid;
 
-    //pthread_create是unix系统中的方法,通过这个方法创建系统线程并指定java_start方法的引用
+    //pthread_create是unix系统中的方法,通过这个方法创建系统线程并指定java_start方法的引用,实际这里会调用java_start方法
     int ret = pthread_create(&tid, &attr, (void* (*)(void*)) java_start, thread);
 
     pthread_attr_destroy(&attr);
@@ -989,14 +999,15 @@ bool os::create_attached_thread(JavaThread* thread) {
   return true;
 }
 
-//真正唤醒创建的线程
+//当当前线程启动后，唤醒等待的线程
 void os::pd_start_thread(Thread* thread) {
   OSThread * osthread = thread->osthread();
   assert(osthread->get_state() != INITIALIZED, "just checking");
   Monitor* sync_with_child = osthread->startThread_lock();
   MutexLockerEx ml(sync_with_child, Mutex::_no_safepoint_check_flag);
 
-  //唤醒,并启动子线程
+  //唤醒,并启动子线程,这里的sync_with_child为osthread->startThread_lock()与java_start方法中的sync->wait(Mutex::_no_safepoint_check_flag);
+  // sync对象是同一个对象,所以这里会唤醒java_start方法中的线程并执行后面的thread->run方法
   sync_with_child->notify();
 }
 

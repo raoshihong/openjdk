@@ -465,7 +465,7 @@ void Thread::set_priority(Thread* thread, ThreadPriority priority) {
   (void)os::set_priority(thread, priority);
 }
 
-//启动线程
+//修改线程的状态为RUNNABLE
 void Thread::start(Thread* thread) {
   trace("start", thread);
   // Start is different from resume in that its safety is guaranteed by context or
@@ -473,14 +473,16 @@ void Thread::start(Thread* thread) {
   if (!DisableStartThread) {
     if (thread->is_Java_thread()) {
       // Initialize the thread state to RUNNABLE before starting this thread.
+      // 在启动线程之前先设置线程的状态为RUNNABLE
       // Can not set it after the thread started because we do not know the
       // exact thread state at that time. It could be in MONITOR_WAIT or
       // in SLEEPING or some other state.
+      //线程启动后无法设置它，因为我们当时不知道确切的线程状态。 它可能在MONITOR_WAIT或SLEEPING或其他一些州。
       java_lang_Thread::set_thread_status(((JavaThread*)thread)->threadObj(),
                                           java_lang_Thread::RUNNABLE);
     }
 
-    //在这里通过os启动系统线程,调用的是os.cpp中的start_thread方法
+    //更改线程的状态为RUNNABLE,调用的是os.cpp中的start_thread方法
     os::start_thread(thread);
   }
 }
@@ -1649,17 +1651,22 @@ JavaThread::~JavaThread() {
 
 
 // The first routine called by a new Java thread
+
 void JavaThread::run() {
   // initialize thread-local alloc buffer related fields
+  //初始化ThreadLocalAllocBuffer
   this->initialize_tlab();
 
   // used to test validitity of stack trace backs
+  //用于测试堆栈跟踪的有效性
   this->record_base_of_stack_pointer();
 
   // Record real stack base and size.
+  //记录真实的堆栈基数和大小
   this->record_stack_base_and_size();
 
   // Initialize thread local storage; set before calling MutexLocker
+  //初始化线程本地存储; 在调用MutexLocker之前设置
   this->initialize_thread_local_storage();
 
   this->create_stack_guard_pages();
@@ -1691,6 +1698,7 @@ void JavaThread::run() {
 
   // We call another function to do the rest so we are sure that the stack addresses used
   // from there will be lower than the stack base just computed
+  // 整个run方法的关键点在这块,这个方法中调用java中的方法
   thread_main_inner();
 
   // Note, thread is no longer valid at this point!
@@ -1711,6 +1719,7 @@ void JavaThread::thread_main_inner() {
       this->set_native_thread_name(this->get_thread_name());
     }
     HandleMark hm(this);
+    //在这里真正调用目标任务的run方法,这里的entry_point方法的引用在创建native_thread = new JavaThread(&thread_entry, sz); 时传入
     this->entry_point()(this, this);
   }
 
