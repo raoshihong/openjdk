@@ -5841,6 +5841,7 @@ int os::PlatformEvent::TryPark() {
   }
 }
 
+//挂起线程
 void os::PlatformEvent::park() {       // AKA "down()"
   // Invariant: Only the thread associated with the Event/PlatformEvent
   // may call park().
@@ -5858,7 +5859,7 @@ void os::PlatformEvent::park() {       // AKA "down()"
      guarantee (_nParked == 0, "invariant") ;
      ++ _nParked ;
      while (_Event < 0) {
-        status = pthread_cond_wait(_cond, _mutex);
+        status = pthread_cond_wait(_cond, _mutex);//在这里调用linux的方法进行等待
         // for some reason, under 2.7 lwp_cond_wait() may return ETIME ...
         // Treat this the same as if the wait was interrupted
         if (status == ETIME) { status = EINTR; }
@@ -5876,6 +5877,7 @@ void os::PlatformEvent::park() {       // AKA "down()"
   guarantee (_Event >= 0, "invariant") ;
 }
 
+//挂起线程
 int os::PlatformEvent::park(jlong millis) {
   guarantee (_nParked == 0, "invariant") ;
 
@@ -5931,6 +5933,7 @@ int os::PlatformEvent::park(jlong millis) {
      ret = OS_OK;
   }
   _Event = 0 ;
+  //在这里释放锁
   status = pthread_mutex_unlock(_mutex);
   assert_status(status == 0, status, "mutex_unlock");
   assert (_nParked == 0, "invariant") ;
@@ -5970,7 +5973,7 @@ void os::PlatformEvent::unpark() {
   status = pthread_mutex_unlock(_mutex);
   assert_status(status == 0, status, "mutex_unlock");
   if (AnyWaiters != 0) {
-    status = pthread_cond_signal(_cond);
+    status = pthread_cond_signal(_cond);//这里是重点,调用linux的方法发送信号量的形式唤醒线程
     assert_status(status == 0, status, "cond_signal");
   }
 

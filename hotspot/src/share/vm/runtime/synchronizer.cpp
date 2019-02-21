@@ -386,7 +386,7 @@ void ObjectSynchronizer::wait(Handle obj, jlong millis, TRAPS) {
   }
   //获取膨胀后的锁的监视器对象
   ObjectMonitor* monitor = ObjectSynchronizer::inflate(THREAD, obj());
-  DTRACE_MONITOR_WAIT_PROBE(monitor, obj(), THREAD, millis);
+  DTRACE_MONITOR_WAIT_PROBE(monitor, obj(), THREAD, millis);//监视器探测
   //使用监视器,等待
   monitor->wait(millis, true, THREAD);
 
@@ -414,11 +414,12 @@ void ObjectSynchronizer::notify(Handle obj, TRAPS) {
     assert(!obj->mark()->has_bias_pattern(), "biases should be revoked by now");
   }
 
+ //获取标志位
   markOop mark = obj->mark();
   if (mark->has_locker() && THREAD->is_lock_owned((address)mark->locker())) {
     return;
   }
-  ObjectSynchronizer::inflate(THREAD, obj())->notify(THREAD);
+  ObjectSynchronizer::inflate(THREAD, obj())->notify(THREAD);//通过锁膨胀获取锁监视器对象objectMonitor,调用notify方法,这个方法在objectMonitor.cpp中
 }
 
 // NOTE: see comment of notify()

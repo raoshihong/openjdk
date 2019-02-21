@@ -1470,14 +1470,17 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
    // Throw IMSX or IEX.
    CHECK_OWNER();
 
-   EventJavaMonitorWait event;
+   EventJavaMonitorWait event;//监视器等待事件
 
    // check for a pending interrupt
-   if (interruptible && Thread::is_interrupted(Self, true) && !HAS_PENDING_EXCEPTION) {
+   // 检查待处理的中断
+   if (interruptible && Thread::is_interrupted(Self, true) && !HAS_PENDING_EXCEPTION) {//意思就是如果被中断了,则需要中断等待
      // post monitor waited event.  Note that this is past-tense, we are done waiting.
-     if (JvmtiExport::should_post_monitor_waited()) {
+     // 监控等待事件。 请注意，这是过去时，我们已经完成了等待。
+     if (JvmtiExport::should_post_monitor_waited()) {//是否已经发送过
         // Note: 'false' parameter is passed here because the
         // wait was not timed out due to thread interrupt.
+        // 注意：'false'参数在这里传递，因为等待没有因线程中断而超时。
         JvmtiExport::post_monitor_waited(jt, this, false);
 
         // In this short circuit of the monitor wait protocol, the
@@ -1488,11 +1491,11 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
         // consume an unpark() meant for the ParkEvent associated with
         // this ObjectMonitor.
      }
-     if (event.should_commit()) {
+     if (event.should_commit()) {//是否应该提交等待事件
        post_monitor_wait_event(&event, 0, millis, false);
      }
-     TEVENT (Wait - Throw IEX) ;
-     THROW(vmSymbols::java_lang_InterruptedException());
+     TEVENT (Wait - Throw IEX) ;//处理中断,抛出异常
+     THROW(vmSymbols::java_lang_InterruptedException());//被中断了的话,抛出中断异常
      return ;
    }
 
@@ -1500,11 +1503,13 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
 
    assert (Self->_Stalled == 0, "invariant") ;
    Self->_Stalled = intptr_t(this) ;
-   jt->set_current_waiting_monitor(this);
+   jt->set_current_waiting_monitor(this);//设置等待
 
    // create a node to be put into the queue
    // Critically, after we reset() the event but prior to park(), we must check
    // for a pending interrupt.
+   // 等待的重点在下面这些代码
+   // 这里将线程封装成一个ObjectWaiter对象node节点,放入到队列中,Self表示当前线程
    ObjectWaiter node(Self);
    node.TState = ObjectWaiter::TS_WAIT ;
    Self->_ParkEvent->reset() ;
@@ -1518,7 +1523,7 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
    // so we use a simple spin-lock instead of a heavier-weight blocking lock.
 
    Thread::SpinAcquire (&_WaitSetLock, "WaitSet - add") ;
-   AddWaiter (&node) ;
+   AddWaiter (&node) ;//这里是重点,将node添加到等待队列中,即将当前线程添加到等待队列中
    Thread::SpinRelease (&_WaitSetLock) ;
 
    if ((SyncFlags & 4) == 0) {
@@ -1527,10 +1532,13 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
    intptr_t save = _recursions; // record the old recursion count
    _waiters++;                  // increment the number of waiters
    _recursions = 0;             // set the recursion level to be 1
-   exit (true, Self) ;                    // exit the monitor
+   exit (true, Self) ;                    // exit the monitor  //线程释放锁
    guarantee (_owner != Self, "invariant") ;
 
+    // 前面只是将线程标识为等待,并将线程对象添加到等待队列中,下面才是真正的将线程挂起等待的操作(实际是通过park()来挂起线程)
+
    // The thread is on the WaitSet list - now park() it.
+   // 该线程在WaitSet列表中 - 现在调用park()来挂起线程。
    // On MP systems it's conceivable that a brief spin before we park
    // could be profitable.
    //
@@ -1552,9 +1560,9 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
        } else
        if (node._notified == 0) {
          if (millis <= 0) {
-            Self->_ParkEvent->park () ;
+            Self->_ParkEvent->park () ;//通过park挂起线程
          } else {
-            ret = Self->_ParkEvent->park (millis) ;
+            ret = Self->_ParkEvent->park (millis) ;//通过park挂起线程
          }
        }
 
@@ -1585,7 +1593,7 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
      if (node.TState == ObjectWaiter::TS_WAIT) {
          Thread::SpinAcquire (&_WaitSetLock, "WaitSet - unlink") ;
          if (node.TState == ObjectWaiter::TS_WAIT) {
-            DequeueSpecificWaiter (&node) ;       // unlink from WaitSet
+            DequeueSpecificWaiter (&node) ;       // unlink from WaitSet  将当前线程从等待队列_WaitSet中移除
             assert(node._notified == 0, "invariant");
             node.TState = ObjectWaiter::TS_RUN ;
          }
@@ -1601,6 +1609,7 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
      if (_succ == Self) _succ = NULL ;
      WasNotified = node._notified ;
 
+    // 被唤醒后,重新去获取监视器对象
      // Reentry phase -- reacquire the monitor.
      // re-enter contended monitor after object.wait().
      // retain OBJECT_WAIT state until re-enter successfully completes
@@ -1694,7 +1703,8 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
 // If the lock is cool (cxq == null && succ == null) and we're on an MP system
 // then instead of transferring a thread from the WaitSet to the EntryList
 // we might just dequeue a thread from the WaitSet and directly unpark() it.
-
+// 可能会仅仅从队列中取出一个线程来唤醒
+// 唤醒线程
 void ObjectMonitor::notify(TRAPS) {
   CHECK_OWNER();
   if (_WaitSet == NULL) {
@@ -1706,7 +1716,8 @@ void ObjectMonitor::notify(TRAPS) {
   int Policy = Knob_MoveNotifyee ;
 
   Thread::SpinAcquire (&_WaitSetLock, "WaitSet - notify") ;
-  ObjectWaiter * iterator = DequeueWaiter() ;
+  //重点在这里
+  ObjectWaiter * iterator = DequeueWaiter() ;//从等待队列中取出一个线程
   if (iterator != NULL) {
      TEVENT (Notify1 - Transfer) ;
      guarantee (iterator->TState == ObjectWaiter::TS_WAIT, "invariant") ;
@@ -1718,6 +1729,7 @@ void ObjectMonitor::notify(TRAPS) {
      Thread * Self = THREAD;
      iterator->_notifier_tid = Self->osthread()->thread_id();
 
+     // 这里构建一个用于存放等待获取锁的线程的链表_EntryList
      ObjectWaiter * List = _EntryList ;
      if (List != NULL) {
         assert (List->_prev == NULL, "invariant") ;
@@ -1725,7 +1737,8 @@ void ObjectMonitor::notify(TRAPS) {
         assert (List != iterator, "invariant") ;
      }
 
-     if (Policy == 0) {       // prepend to EntryList
+    //下面根据不同的策略来将等待获取锁的线程加入到链表中
+     if (Policy == 0) {       // prepend to EntryList  头插入法
          if (List == NULL) {
              iterator->_next = iterator->_prev = NULL ;
              _EntryList = iterator ;
@@ -1736,7 +1749,7 @@ void ObjectMonitor::notify(TRAPS) {
              _EntryList = iterator ;
         }
      } else
-     if (Policy == 1) {      // append to EntryList
+     if (Policy == 1) {      // append to EntryList  尾部追加法
          if (List == NULL) {
              iterator->_next = iterator->_prev = NULL ;
              _EntryList = iterator ;
@@ -1775,7 +1788,7 @@ void ObjectMonitor::notify(TRAPS) {
             Tail = _cxq ;
             if (Tail == NULL) {
                 iterator->_next = NULL ;
-                if (Atomic::cmpxchg_ptr (iterator, &_cxq, NULL) == NULL) {
+                if (Atomic::cmpxchg_ptr (iterator, &_cxq, NULL) == NULL) {//cas算法
                    break ;
                 }
             } else {
@@ -1790,7 +1803,7 @@ void ObjectMonitor::notify(TRAPS) {
         ParkEvent * ev = iterator->_event ;
         iterator->TState = ObjectWaiter::TS_RUN ;
         OrderAccess::fence() ;
-        ev->unpark() ;
+        ev->unpark() ;//调用unppark唤醒线程
      }
 
      if (Policy < 4) {
@@ -1806,10 +1819,11 @@ void ObjectMonitor::notify(TRAPS) {
      // critical section.
   }
 
+  //释放锁
   Thread::SpinRelease (&_WaitSetLock) ;
 
   if (iterator != NULL && ObjectMonitor::_sync_Notifications != NULL) {
-     ObjectMonitor::_sync_Notifications->inc() ;
+     ObjectMonitor::_sync_Notifications->inc() ;//发送通知
   }
 }
 
@@ -2325,11 +2339,13 @@ void ObjectWaiter::wait_reenter_end(ObjectMonitor *mon) {
   JavaThreadBlockedOnMonitorEnterState::wait_reenter_end(jt, _active);
 }
 
+// 将node节点添加到_WaitSet等待队列中
 inline void ObjectMonitor::AddWaiter(ObjectWaiter* node) {
   assert(node != NULL, "should not dequeue NULL node");
   assert(node->_prev == NULL, "node already in list");
   assert(node->_next == NULL, "node already in list");
   // put node at end of queue (circular doubly linked list)
+  // 下面是这个等待队列添加节点的操作,采用的是双向链表
   if (_WaitSet == NULL) {
     _WaitSet = node;
     node->_prev = node;
@@ -2354,6 +2370,7 @@ inline ObjectWaiter* ObjectMonitor::DequeueWaiter() {
   return waiter;
 }
 
+// 将node节点从_WaitSet等待队列中取出一个线程并从中移除
 inline void ObjectMonitor::DequeueSpecificWaiter(ObjectWaiter* node) {
   assert(node != NULL, "should not dequeue NULL node");
   assert(node->_prev != NULL, "node already removed from list");
