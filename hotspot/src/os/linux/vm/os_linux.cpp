@@ -4387,6 +4387,7 @@ void os::interrupt(Thread* thread) {
   OSThread* osthread = thread->osthread();
 
   if (!osthread->interrupted()) {
+    //设置当前线程的中断标识
     osthread->set_interrupted(true);
     // More than one thread can get here with the same value of osthread,
     // resulting in multiple notifications.  We do, however, want the store

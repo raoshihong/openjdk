@@ -546,6 +546,7 @@ JVM_ENTRY(jint, JVM_IHashCode(JNIEnv* env, jobject handle))
 JVM_END
 
 
+// 调用Object的wait方法
 JVM_ENTRY(void, JVM_MonitorWait(JNIEnv* env, jobject handle, jlong ms))
   JVMWrapper("JVM_MonitorWait");
   Handle obj(THREAD, JNIHandles::resolve_non_null(handle));
@@ -558,11 +559,12 @@ JVM_ENTRY(void, JVM_MonitorWait(JNIEnv* env, jobject handle, jlong ms))
     // made the successor. This means that the JVMTI_EVENT_MONITOR_WAIT
     // event handler cannot accidentally consume an unpark() meant for
     // the ParkEvent associated with this ObjectMonitor.
+    // 当前线程已拥有监视器，但尚未将其添加到等待队列中，因此当前线程无法成为后续线程。 这意味着JVMTI_EVENT_MONITOR_WAIT事件处理程序不会意外地使用与此ObjectMonitor关联的ParkEvent的unpark（）。
   }
   ObjectSynchronizer::wait(obj, ms, CHECK);
 JVM_END
 
-
+// 调用Object的notify方法
 JVM_ENTRY(void, JVM_MonitorNotify(JNIEnv* env, jobject handle))
   JVMWrapper("JVM_MonitorNotify");
   Handle obj(THREAD, JNIHandles::resolve_non_null(handle));
@@ -3320,9 +3322,11 @@ JVM_ENTRY(void, JVM_Interrupt(JNIEnv* env, jobject jthread))
 
   // Ensure that the C++ Thread and OSThread structures aren't freed before we operate
   oop java_thread = JNIHandles::resolve_non_null(jthread);
+  // 释放锁
   MutexLockerEx ml(thread->threadObj() == java_thread ? NULL : Threads_lock);
   // We need to re-resolve the java_thread, since a GC might have happened during the
   // acquire of the lock
+  //我们需要重新解析java_thread，因为在获取锁定期间可能发生了GC
   JavaThread* thr = java_lang_Thread::thread(JNIHandles::resolve_non_null(jthread));
   if (thr != NULL) {
     Thread::interrupt(thr);

@@ -374,9 +374,9 @@ ObjectLocker::~ObjectLocker() {
 
 // -----------------------------------------------------------------------------
 //  Wait/Notify/NotifyAll
-// NOTE: must use heavy weight monitor to handle wait()
+// NOTE: must use heavy weight monitor to handle wait()   必须使用重量级监视器来处理wait()
 void ObjectSynchronizer::wait(Handle obj, jlong millis, TRAPS) {
-  if (UseBiasedLocking) {
+  if (UseBiasedLocking) {//使用偏向锁
     BiasedLocking::revoke_and_rebias(obj, false, THREAD);
     assert(!obj->mark()->has_bias_pattern(), "biases should be revoked by now");
   }
@@ -384,8 +384,10 @@ void ObjectSynchronizer::wait(Handle obj, jlong millis, TRAPS) {
     TEVENT (wait - throw IAX) ;
     THROW_MSG(vmSymbols::java_lang_IllegalArgumentException(), "timeout value is negative");
   }
+  //获取膨胀后的锁的监视器对象
   ObjectMonitor* monitor = ObjectSynchronizer::inflate(THREAD, obj());
   DTRACE_MONITOR_WAIT_PROBE(monitor, obj(), THREAD, millis);
+  //使用监视器,等待
   monitor->wait(millis, true, THREAD);
 
   /* This dummy call is in place to get around dtrace bug 6254741.  Once
@@ -472,12 +474,14 @@ static int MonitorScavengeThreshold = 1000000 ;
 static volatile int ForceMonitorScavenge = 0 ; // Scavenge required and pending
 
 static markOop ReadStableMark (oop obj) {
+//获取对象中的标识位
   markOop mark = obj->mark() ;
   if (!mark->is_being_inflated()) {
     return mark ;       // normal fast-path return
   }
 
   int its = 0 ;
+  //处于正在膨胀的锁,则继续通过自旋来完成锁的膨胀
   for (;;) {
     markOop mark = obj->mark() ;
     if (!mark->is_being_inflated()) {
@@ -497,7 +501,7 @@ static markOop ReadStableMark (oop obj) {
     ++its ;
     if (its > 10000 || !os::is_MP()) {
        if (its & 1) {
-         os::NakedYield() ;
+         os::NakedYield() ;//通过NakedYield放弃cpu资源
          TEVENT (Inflate: INFLATING - yield) ;
        } else {
          // Note that the following code attenuates the livelock problem but is not
@@ -525,7 +529,7 @@ static markOop ReadStableMark (oop obj) {
            // so we periodically call Self->_ParkEvent->park(1).
            // We use a mixed spin/yield/block mechanism.
            if ((YieldThenBlock++) >= 16) {
-              Thread::current()->_ParkEvent->park(1) ;
+              Thread::current()->_ParkEvent->park(1) ;//获取通过park将线程挂起
            } else {
               os::NakedYield() ;
            }
@@ -1192,28 +1196,30 @@ ObjectMonitor* ObjectSynchronizer::inflate_helper(oop obj) {
 
 // Note that we could encounter some performance loss through false-sharing as
 // multiple locks occupy the same $ line.  Padding might be appropriate.
-
-
+//请注意，由于多个锁占用相同的$ line，我们可能会因错误共享而遇到一些性能损失。 填充可能是合适的。
+// 下面是锁的膨胀过程
 ObjectMonitor * ATTR ObjectSynchronizer::inflate (Thread * Self, oop object) {
   // Inflate mutates the heap ...
   // Relaxing assertion for bug 6320749.
   assert (Universe::verify_in_progress() ||
           !SafepointSynchronize::is_at_safepoint(), "invariant") ;
 
+//可以看到,锁的整个膨胀过程都是通过自旋完成
   for (;;) {
+        //先获取对象上的标志位
       const markOop mark = object->mark() ;
       assert (!mark->has_bias_pattern(), "invariant") ;
 
-      // The mark can be in one of the following states:
-      // *  Inflated     - just return
-      // *  Stack-locked - coerce it to inflated
-      // *  INFLATING    - busy wait for conversion to complete
-      // *  Neutral      - aggressively inflate the object.
-      // *  BIASED       - Illegal.  We should never see this
+      // The mark can be in one of the following states:  标记可以处于以下状态之一
+      // *  Inflated     - just return  已经膨胀完成,则立即返回
+      // *  Stack-locked - coerce it to inflated  堆栈锁定状态,则强制进行膨胀
+      // *  INFLATING 爆炸式    - busy wait for conversion to complete  忙等待转换完成
+      // *  Neutral 中性      - aggressively inflate the object. 积极地膨胀对象。
+      // *  BIASED       - Illegal.  We should never see this  非法。 我们永远不应该看到这一点
 
-      // CASE: inflated
-      if (mark->has_monitor()) {
-          ObjectMonitor * inf = mark->monitor() ;
+      // CASE: inflated  已经膨胀完成,则立即返回
+      if (mark->has_monitor()) {//标志位为重量级锁,即标识位为10,
+          ObjectMonitor * inf = mark->monitor() ;//获取监视器对象
           assert (inf->header()->is_neutral(), "invariant");
           assert (inf->object() == object, "invariant") ;
           assert (ObjectSynchronizer::verify_objmon_isinpool(inf), "monitor is invalid");
@@ -1226,9 +1232,11 @@ ObjectMonitor * ATTR ObjectSynchronizer::inflate (Thread * Self, oop object) {
       // The INFLATING value is transient.
       // Currently, we spin/yield/park and poll the markword, waiting for inflation to finish.
       // We could always eliminate polling by parking the thread on some auxiliary list.
+
+      // 当前锁正在膨胀
       if (mark == markOopDesc::INFLATING()) {
-         TEVENT (Inflate: spin while INFLATING) ;
-         ReadStableMark(object) ;
+         TEVENT (Inflate: spin while INFLATING) ;//当前锁正在膨胀中
+         ReadStableMark(object) ;//则继续通过自旋进行锁的膨胀,注意这里的for循环并不会一直占用着cpu资源，而是会通过spin/yield/park 释放cpu资源
          continue ;
       }
 
@@ -1251,6 +1259,7 @@ ObjectMonitor * ATTR ObjectSynchronizer::inflate (Thread * Self, oop object) {
       // before or after the CAS(INFLATING) operation.
       // See the comments in omAlloc().
 
+      // 如果当前是轻量级锁状态，即锁标识位为 00
       if (mark->has_locker()) {
           ObjectMonitor * m = omAlloc (Self) ;
           // Optimistically prepare the objectmonitor - anticipate successful CAS

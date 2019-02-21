@@ -1457,7 +1457,7 @@ void ObjectMonitor::post_monitor_wait_event(EventJavaMonitorWait* event,
 
 // -----------------------------------------------------------------------------
 // Wait/Notify/NotifyAll
-//
+// Object方法调用wait最终是调用这里的Monitor的wait方法
 // Note: a subset of changes to ObjectMonitor::wait()
 // will need to be replicated in complete_exit above
 void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
