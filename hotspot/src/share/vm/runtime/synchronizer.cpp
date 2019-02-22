@@ -223,7 +223,9 @@ void ObjectSynchronizer::fast_exit(oop object, BasicLock* lock, TRAPS) {
 // This routine is used to handle interpreter/compiler slow case
 // We don't need to use fast path here, because it must have been
 // failed in the interpreter/compiler code.
+//
 void ObjectSynchronizer::slow_enter(Handle obj, BasicLock* lock, TRAPS) {
+    //获取标识位
   markOop mark = obj->mark();
   assert(!mark->has_bias_pattern(), "should not see bias pattern here");
 
