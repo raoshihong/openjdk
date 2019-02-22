@@ -4457,6 +4457,7 @@ void Threads::print_on_error(outputStream* st, Thread* current, char* buf, int b
 
 typedef volatile int SpinLockT ;
 
+// 自旋获取锁
 void Thread::SpinAcquire (volatile int * adr, const char * LockName) {
   if (Atomic::cmpxchg (1, adr, 0) == 0) {
      return ;   // normal fast-path return

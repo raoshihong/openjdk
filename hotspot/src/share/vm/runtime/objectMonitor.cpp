@@ -1461,6 +1461,8 @@ void ObjectMonitor::post_monitor_wait_event(EventJavaMonitorWait* event,
 // Note: a subset of changes to ObjectMonitor::wait()
 // will need to be replicated in complete_exit above
 void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
+
+    //检查线程的合法性,是否为java thread
    Thread * const Self = THREAD ;
    assert(Self->is_Java_thread(), "Must be Java thread!");
    JavaThread *jt = (JavaThread *)THREAD;
@@ -1468,11 +1470,13 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
    DeferredInitialize () ;
 
    // Throw IMSX or IEX.
+   // 检测是否拥有锁
    CHECK_OWNER();
 
    EventJavaMonitorWait event;//监视器等待事件
 
    // check for a pending interrupt
+   // 检查中断标识位,当前线程是否被中断了
    // 检查待处理的中断
    if (interruptible && Thread::is_interrupted(Self, true) && !HAS_PENDING_EXCEPTION) {//意思就是如果被中断了,则需要中断等待
      // post monitor waited event.  Note that this is past-tense, we are done waiting.
@@ -1522,15 +1526,17 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
    // returns because of a timeout of interrupt.  Contention is exceptionally rare
    // so we use a simple spin-lock instead of a heavier-weight blocking lock.
 
+    //使用自旋来获取对_WaitSet队列写入的锁
    Thread::SpinAcquire (&_WaitSetLock, "WaitSet - add") ;
    AddWaiter (&node) ;//这里是重点,将node添加到等待队列中,即将当前线程添加到等待队列中
+   //释放锁,表示已经成功将当前线程加入到_WaitSet队列中了
    Thread::SpinRelease (&_WaitSetLock) ;
 
    if ((SyncFlags & 4) == 0) {
       _Responsible = NULL ;
    }
    intptr_t save = _recursions; // record the old recursion count
-   _waiters++;                  // increment the number of waiters
+   _waiters++;                  // increment the number of waiters  等待线程个数+1
    _recursions = 0;             // set the recursion level to be 1
    exit (true, Self) ;                    // exit the monitor  //线程释放锁
    guarantee (_owner != Self, "invariant") ;
@@ -1577,10 +1583,12 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
 
      // Node may be on the WaitSet, the EntryList (or cxq), or in transition
      // from the WaitSet to the EntryList.
+     // 节点可以在WaitSet，EntryList（或cxq）上，或者从WaitSet转换到EntryList。
      // See if we need to remove Node from the WaitSet.
+     // 看看我们是否需要从WaitSet中删除Node。
      // We use double-checked locking to avoid grabbing _WaitSetLock
      // if the thread is not on the wait queue.
-     //
+     // 如果线程不在等待队列中，我们使用双重检查锁定来避免抓取_WaitSetLock。
      // Note that we don't need a fence before the fetch of TState.
      // In the worst case we'll fetch a old-stale value of TS_WAIT previously
      // written by the is thread. (perhaps the fetch might even be satisfied
@@ -1589,6 +1597,8 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
      // highly unlikely).  If the following LD fetches a stale TS_WAIT value
      // then we'll acquire the lock and then re-fetch a fresh TState value.
      // That is, we fail toward safety.
+
+    //下面是进行双重检查
 
      if (node.TState == ObjectWaiter::TS_WAIT) {
          Thread::SpinAcquire (&_WaitSetLock, "WaitSet - unlink") ;
@@ -1607,14 +1617,16 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
      guarantee (node.TState != ObjectWaiter::TS_WAIT, "invariant") ;
      OrderAccess::loadload() ;
      if (_succ == Self) _succ = NULL ;
-     WasNotified = node._notified ;
+     WasNotified = node._notified ;//获取线程是否被notify的标识
 
     // 被唤醒后,重新去获取监视器对象
      // Reentry phase -- reacquire the monitor.
      // re-enter contended monitor after object.wait().
+     // 在object.wait（）之后重新进入竞争监视器。
      // retain OBJECT_WAIT state until re-enter successfully completes
      // Thread state is thread_in_vm and oop access is again safe,
      // although the raw address of the object may have changed.
+     // 保留OBJECT_WAIT状态直到重新成功完成完成线程状态是thread_in_vm并且oop访问再次安全，尽管对象的原始地址可能已更改。
      // (Don't cache naked oops over safepoints, of course).
 
      // post monitor waited event. Note that this is past-tense, we are done waiting.
@@ -1633,10 +1645,13 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
          // consume the unpark() that was done when the successor was
          // set because the same ParkEvent is shared between Java
          // monitors and JVM/TI RawMonitors (for now).
+         // 已通知ObjectMonitor并且当前线程是后继者，这也意味着已经完成了unpark（）。
+         // JVMTI_EVENT_MONITOR_WAITED事件处理程序可以使用在设置后继时完成的unpark（），因为Java监视器和JVM / TI RawMonitors之间共享相同的ParkEvent（现在）。
          //
          // We redo the unpark() to ensure forward progress, i.e., we
          // don't want all pending threads hanging (parked) with none
          // entering the unlocked monitor.
+         // 我们重调用unpark（）以确保前进，即我们不希望挂起（停放）的所有线程都没有进入解锁的监视器。
          node._event->unpark();
        }
      }
@@ -1661,10 +1676,13 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
      }
 
      // Self has reacquired the lock.
+     // 当前线程已经获取锁
      // Lifecycle - the node representing Self must not appear on any queues.
+     // 表示Self的节点不得出现在任何队列中。
      // Node is about to go out-of-scope, but even if it were immortal we wouldn't
      // want residual elements associated with this thread left on any lists.
-     guarantee (node.TState == ObjectWaiter::TS_RUN, "invariant") ;
+     // Node即将超出范围，但即使它是不朽的，我们也不希望在任何列表上留下与此线程关联的剩余元素。
+     guarantee (node.TState == ObjectWaiter::TS_RUN, "invariant") ;//确保当前线程是运行状态的
      assert    (_owner == Self, "invariant") ;
      assert    (_succ != Self , "invariant") ;
    } // OSThreadWaitState()
@@ -1673,7 +1691,7 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
 
    guarantee (_recursions == 0, "invariant") ;
    _recursions = save;     // restore the old recursion count
-   _waiters--;             // decrement the number of waiters
+   _waiters--;             // decrement the number of waiters  唤醒后,将等待线程个数-1
 
    // Verify a few postconditions
    assert (_owner == Self       , "invariant") ;
@@ -1685,17 +1703,21 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
    }
 
    // check if the notification happened
+   // 检查notify通知是否发生
    if (!WasNotified) {
      // no, it could be timeout or Thread.interrupt() or both
      // check for interrupt event, otherwise it is timeout
-     if (interruptible && Thread::is_interrupted(Self, true) && !HAS_PENDING_EXCEPTION) {
+     // notify通知没有发生,则可能是超时或者是调用了interrupt()中断线程导致wait结束
+     if (interruptible && Thread::is_interrupted(Self, true) && !HAS_PENDING_EXCEPTION) {//如果是中断,则抛出中断异常信息
        TEVENT (Wait - throw IEX from epilog) ;
        THROW(vmSymbols::java_lang_InterruptedException());
      }
    }
 
    // NOTE: Spurious wake up will be consider as timeout.
+   // 虚假唤醒将被视为超时。
    // Monitor notify has precedence over thread interrupt.
+   // 监视通知优先于线程中断。
 }
 
 
@@ -1706,6 +1728,7 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
 // 可能会仅仅从队列中取出一个线程来唤醒
 // 唤醒线程
 void ObjectMonitor::notify(TRAPS) {
+//检测是否拥有所
   CHECK_OWNER();
   if (_WaitSet == NULL) {
      TEVENT (Empty-Notify) ;
@@ -1715,6 +1738,7 @@ void ObjectMonitor::notify(TRAPS) {
 
   int Policy = Knob_MoveNotifyee ;
 
+// 自旋获取对_waitset队列修改的锁
   Thread::SpinAcquire (&_WaitSetLock, "WaitSet - notify") ;
   //重点在这里
   ObjectWaiter * iterator = DequeueWaiter() ;//从等待队列中取出一个线程
