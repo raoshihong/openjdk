@@ -321,7 +321,7 @@ void ATTR ObjectMonitor::enter(TRAPS) {
   Thread * const Self = THREAD ;
   void * cur ;
 
-  cur = Atomic::cmpxchg_ptr (Self, &_owner, NULL) ;
+  cur = Atomic::cmpxchg_ptr (Self, &_owner, NULL) ;//修改当前线程的对象,标识当前以及拥有锁
   if (cur == NULL) {
      // Either ASSERT _recursions == 0 or explicitly set _recursions = 0.
      assert (_recursions == 0   , "invariant") ;
