@@ -1813,6 +1813,7 @@ run:
 
       /* monitorenter and monitorexit for locking/unlocking an object */
 
+        // synchronized 同步锁的二进制拦截
       CASE(_monitorenter): {
         oop lockee = STACK_OBJECT(-1);
         // derefing's lockee ought to provoke implicit null check
@@ -1820,6 +1821,7 @@ run:
         // find a free monitor or one already allocated for this object
         // if we find a matching object then we need a new monitor
         // since this is recursive enter
+        //
         BasicObjectLock* limit = istate->monitor_base();
         BasicObjectLock* most_recent = (BasicObjectLock*) istate->stack_base();
         BasicObjectLock* entry = NULL;
@@ -1835,7 +1837,7 @@ run:
 
           markOop mark = lockee->mark();
           intptr_t hash = (intptr_t) markOopDesc::no_hash;
-          // implies UseBiasedLocking
+          // implies UseBiasedLocking  使用偏向锁
           if (mark->has_bias_pattern()) {
             uintptr_t thread_ident;
             uintptr_t anticipated_bias_locking_value;
@@ -1873,6 +1875,7 @@ run:
                   (* BiasedLocking::rebiased_lock_entry_count_addr())++;
               }
               else {
+                // 进入锁的重点,调用InterpreterRuntime.cpp中的monitorenter方法
                 CALL_VM(InterpreterRuntime::monitorenter(THREAD, entry), handle_exception);
               }
               success = true;

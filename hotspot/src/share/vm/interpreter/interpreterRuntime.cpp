@@ -600,9 +600,11 @@ IRT_END
 //
 // The interpreter's synchronization code is factored out so that it can
 // be shared by method invocation and synchronized blocks.
+// 解释器的同步代码被分解出来，以便它可以由方法调用和同步块共享。
 //%note synchronization_3
 
 //%note monitor_1
+// 进入监视器的方法
 IRT_ENTRY_NO_ASYNC(void, InterpreterRuntime::monitorenter(JavaThread* thread, BasicObjectLock* elem))
 #ifdef ASSERT
   thread->last_frame().interpreter_frame_verify_monitor(elem);
