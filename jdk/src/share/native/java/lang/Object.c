@@ -39,6 +39,7 @@
 
 #include "java_lang_Object.h"
 
+// 映射Object中的底层方法到jvm.cpp中的方法
 static JNINativeMethod methods[] = {
     {"hashCode",    "()I",                    (void *)&JVM_IHashCode},
     {"wait",        "(J)V",                   (void *)&JVM_MonitorWait},
